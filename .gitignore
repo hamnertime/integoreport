@@ -39,3 +39,8 @@ Thumbs.db
 ticket_poller.lock
 agents.txt
 requesters.txt
+raw_data
+raw_data/*
+*.json
+*.html
+*.eml
