@@ -45,28 +45,34 @@ To create a system that can:
 * **Templating:** Uses Jinja2 for HTML generation, with custom filters for date and duration formatting.
 
 ## Planned Project Structure
+```
 integoreport/
-├── main.py                     # Flask app (To be developed)
-├── pull_info.py                # Orchestrates data pullers (Basic placeholder)
-├── build_report.py             # Generates HTML report from raw_data
+├── main.py                           # Flask app (To be developed)
+├── pull_info.py                      # Orchestrates data pullers (Basic placeholder)
+├── build_report.py                   # Generates HTML report from raw_data
 │
 ├── data_pullers/
-│   └── freshservice.py         # Fetches data for a client from Freshservice
+│   └── freshservice.py               # Fetches data for a client from Freshservice
 │
 ├── utils/
-│   └── client_manager.py       # Fetches and manages the list of clients
+│   └── client_manager.py             # Fetches and manages the list of clients
 │
-├── raw_data/                   # Stores JSON output from data_pullers (e.g., freshservice_CLIENTID.json)
-│                               # This folder is intended to be temporary for each report run.
+├── raw_data/                         # Stores JSON output from data_pullers
+│   │                                 # (e.g., freshservice_CLIENTID.json)
+│   │                                 # This folder is intended to be temporary
+│   │                                 # for each report run.
 │
 ├── templates/
-│   └── email_report_template.html # Template for the client HTML email
+│   └── email_report_template.html    # Template for the client HTML email
 │
-├── static/                     # CSS, JS for the Flask app (if needed)
+├── static/                           # CSS, JS for the Flask app (if needed)
 │
-├── token.txt                   # Stores Freshservice API key (MUST be in .gitignore)
-├── companies_list.json         # Stores the list of clients (ID and Name)
-└── README.md                   # This file
+├── token.txt                         # Stores Freshservice API key
+│                                     # (MUST be in .gitignore)
+├── companies_list.json               # Stores the list of clients (ID and Name)
+└── README.md                         # This file
+```
+
 
 ## Setup (Current)
 
