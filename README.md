@@ -45,3 +45,96 @@ To create a system that can:
 * **Templating:** Uses Jinja2 for HTML generation, with custom filters for date and duration formatting.
 
 ## Planned Project Structure
+integoreport/
+├── main.py                     # Flask app (To be developed)
+├── pull_info.py                # Orchestrates data pullers (Basic placeholder)
+├── build_report.py             # Generates HTML report from raw_data
+│
+├── data_pullers/
+│   └── freshservice.py         # Fetches data for a client from Freshservice
+│
+├── utils/
+│   └── client_manager.py       # Fetches and manages the list of clients
+│
+├── raw_data/                   # Stores JSON output from data_pullers (e.g., freshservice_CLIENTID.json)
+│                               # This folder is intended to be temporary for each report run.
+│
+├── templates/
+│   └── email_report_template.html # Template for the client HTML email
+│
+├── static/                     # CSS, JS for the Flask app (if needed)
+│
+├── token.txt                   # Stores Freshservice API key (MUST be in .gitignore)
+├── companies_list.json         # Stores the list of clients (ID and Name)
+└── README.md                   # This file
+
+## Setup (Current)
+
+1.  **Clone the Repository.**
+2.  **Python Environment:**
+    * Python 3.x recommended.
+    * Use a virtual environment:
+        ```bash
+        python -m venv venv
+        source venv/bin/activate  # On Windows: venv\Scripts\activate
+        ```
+3.  **Install Dependencies:**
+    ```bash
+    pip install requests python-dateutil Jinja2
+    ```
+4.  **Configuration:**
+    * Create `token.txt` in the project root (`integoreport/`) and place your Freshservice API key in it (just the key, no other text).
+    * Ensure your API key has permissions to:
+        * Read Departments (and/or Companies, depending on your setup).
+        * Filter and Read Tickets (including details, stats, requester info, assets, conversations, time entries).
+        * *(Currently, the script assumes read access to Requesters is NOT available due to prior 403 errors, so it doesn't fetch Prime User emails directly).*
+
+## Running the Components (Current Workflow)
+
+1.  **Update Client List (as needed):**
+    ```bash
+    python utils/client_manager.py
+    ```
+    This will generate/update `companies_list.json` in the project root.
+
+2.  **Fetch Data for a Specific Client:**
+    * Identify the `CLIENT_ID` from `companies_list.json`.
+    * Run the Freshservice data puller:
+        ```bash
+        python data_pullers/freshservice.py <CLIENT_ID>
+        # Example: python data_pullers/freshservice.py 19000077030
+        ```
+    * This will create a `freshservice_<CLIENT_ID>.json` file in the `raw_data/` directory.
+
+3.  **Generate the HTML Report:**
+    ```bash
+    python build_report.py
+    ```
+    * This script will automatically find the latest `freshservice_*.json` file in `raw_data/`.
+    * It will generate `output_report.html` in the project root.
+
+## Next Steps & Future Development
+
+* **Refine `build_report.py`:**
+    * Calculate more advanced and insightful statistics (e.g., First Contact Resolution, SLA adherence if data is available, trends over time).
+    * Improve the HTML template (`templates/email_report_template.html`) for better presentation and client-readiness.
+    * Implement CSS inlining for robust email client compatibility (e.g., using the `premailer` library).
+* **Develop `pull_info.py`:**
+    * Create logic to iterate through a list of clients (from `companies_list.json`) and run the appropriate data pullers for each.
+    * Manage the `raw_data/` directory (e.g., clear it before a new batch run or archive old data).
+* **Develop `main.py` (Flask Interface):**
+    * UI to trigger `client_manager.py`.
+    * UI to select a client and date range (or "previous month") to trigger `pull_info.py` and then `build_report.py`.
+    * Display generated reports or provide download links.
+* **Add More Data Pullers:**
+    * Microsoft 365 (e.g., Secure Score, user activity).
+    * Sentinel One (e.g., threat summaries).
+* **Mailchimp Integration:** Send the generated HTML reports via Mailchimp API.
+* **Error Handling & Logging:** Enhance across all scripts.
+
+## License
+
+This project is licensed under the GPLv3 License. See the `LICENSE.md` file for details (you'll need to create this file and add the GPLv3 text to it).
+
+---
+Copyright (c) 2025 David Hamner
