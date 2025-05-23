@@ -7,7 +7,6 @@ import datetime
 from dateutil.parser import isoparse
 from jinja2 import Environment, FileSystemLoader
 import math
-# Removed: io, base64, matplotlib imports
 
 # --- Configuration ---
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -54,90 +53,90 @@ def make_aware(dt, default_tz=datetime.timezone.utc):
     if dt is None: return None
     return dt.replace(tzinfo=dt.tzinfo or default_tz)
 
-# --- NEW: HTML Bar Chart Generation Functions ---
-def generate_html_bar_chart(data_dict, chart_title, bar_height_px=20, max_bar_width_percent=100):
-    """Generates an HTML table-based horizontal bar chart string."""
+# --- MODIFIED: HTML Segmented Bar Chart Generation Functions ---
+def generate_segmented_bar_chart_html(data_dict, chart_title, bar_height_px=25):
+    """Generates an HTML table-based single segmented horizontal bar chart string with a legend."""
     if not data_dict or sum(data_dict.values()) == 0:
-        return f'<p style="font-size:13px; color:#555; text-align:center;">{chart_title}: No data available.</p>'
+        return f'<div style="padding:10px; text-align:center; font-size:13px; color:#555;">{chart_title}: No data available.</div>'
 
-    html_rows = []
     total_value = sum(data_dict.values())
 
-    # Sort data by value, descending, for better visual
+    # Sort data by value, descending, for consistent color assignment and legend order
     sorted_data = dict(sorted(data_dict.items(), key=lambda item: item[1], reverse=True))
 
+    bar_segments_html = []
+    legend_items_html = []
+
     for i, (label, value) in enumerate(sorted_data.items()):
-        percentage_of_total = (value / total_value * 100) if total_value > 0 else 0
-        bar_width_percent = (percentage_of_total / 100) * max_bar_width_percent
+        percentage = (value / total_value * 100) if total_value > 0 else 0
         color = CHART_COLORS[i % len(CHART_COLORS)]
 
-        html_rows.append(f"""
-        <tr>
-            <td style="padding: 4px 8px; font-size: 12px; color: #333; width: 40%; white-space: nowrap; vertical-align: middle;">{label}: {value} ({percentage_of_total:.1f}%)</td>
-            <td style="padding: 4px 0; vertical-align: middle; width: 60%;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:none;"><tr>
-                    <td width="{bar_width_percent:.2f}%" bgcolor="{color}" style="height:{bar_height_px}px; font-size:1px; line-height:1px; border-radius: 3px;">&nbsp;</td>
-                    <td width="{100 - bar_width_percent:.2f}%" style="height:{bar_height_px}px; font-size:1px; line-height:1px;">&nbsp;</td>
-                </tr></table>
-            </td>
-        </tr>
-        """)
+        # Ensure segments with very small percentages are at least slightly visible if non-zero
+        # However, for email, exact width might be better than min-width pixel hacks.
+        # Let's rely on the percentage for width. Tiny segments might be hard to see but legend will clarify.
+        if percentage > 0: # Only add a segment if it has a value
+            bar_segments_html.append(
+                f'<td width="{percentage:.2f}%" bgcolor="{color}" title="{label}: {value} ({percentage:.1f}%)" style="font-size:1px; line-height:1px; height:{bar_height_px}px;">&nbsp;</td>'
+            )
+        legend_items_html.append(
+             f'<li style="margin-bottom: 4px; font-size:12px; color:#333;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background-color:{color};margin-right:7px;vertical-align:middle;"></span>{label}: {value} ({percentage:.1f}%)</li>'
+        )
+
+    # If all values were zero leading to no segments, handle this case for the bar
+    if not bar_segments_html:
+        bar_segments_html.append(f'<td width="100%" bgcolor="#e0e0e0" style="font-size:1px; line-height:1px; height:{bar_height_px}px; text-align:center; color:#555; font-size:10px; vertical-align:middle;">(No values)</td>')
+
 
     return f"""
     <div style="margin-bottom: 25px; padding:10px; border: 1px solid #eee; border-radius: 5px; background-color: #fdfdfd;">
         <h4 style="margin-top:0; margin-bottom: 10px; font-size: 16px; font-weight: 600; color: #444; text-align:center;">{chart_title}</h4>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:none;">
-            {''.join(html_rows)}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #ccc; height: {bar_height_px}px; border-radius: 4px; overflow: hidden; table-layout: fixed;">
+            <tr>
+                {''.join(bar_segments_html)}
+            </tr>
         </table>
+        <ul style="list-style:none; padding-left:0; margin-top:10px; text-align:left; columns: 2; -webkit-columns: 2; -moz-columns: 2;">
+            {''.join(legend_items_html)}
+        </ul>
     </div>
     """
 
 def generate_sla_bar_chart_html(met_count, applicable_count, chart_title, met_color="#28a745", missed_color="#dc3545"):
     if applicable_count == 0:
-        return f'<p style="font-size:13px; color:#555; text-align:center;">{chart_title}: Not applicable (0 tickets).</p>'
+        return f'<div style="padding:10px; text-align:center; font-size:13px; color:#555;">{chart_title}: Not applicable (0 tickets).</div>'
 
     missed_count = applicable_count - met_count
     met_percent = (met_count / applicable_count * 100) if applicable_count > 0 else 0
     missed_percent = (missed_count / applicable_count * 100) if applicable_count > 0 else 0
 
-    # Ensure at least a tiny bar is visible for non-zero values for better email client rendering
-    min_visible_width = 1 # 1% minimum width if value > 0
-    met_bar_width = max(min_visible_width, met_percent) if met_count > 0 else 0
-    missed_bar_width = max(min_visible_width, missed_percent) if missed_count > 0 else 0
+    bar_height_px = 25
+    bar_segments_html = []
 
-    # Adjust if sum > 100 due to min_visible_width
-    if met_bar_width + missed_bar_width > 100:
-        if met_bar_width > missed_bar_width:
-            met_bar_width = 100 - missed_bar_width
-        else:
-            missed_bar_width = 100 - met_bar_width
+    if met_count > 0:
+        bar_segments_html.append(f'<td width="{met_percent:.2f}%" bgcolor="{met_color}" title="Met: {met_count} ({met_percent:.1f}%)" style="font-size:1px; line-height:1px; height:{bar_height_px}px;">&nbsp;</td>')
+    if missed_count > 0:
+        bar_segments_html.append(f'<td width="{missed_percent:.2f}%" bgcolor="{missed_color}" title="Missed: {missed_count} ({missed_percent:.1f}%)" style="font-size:1px; line-height:1px; height:{bar_height_px}px;">&nbsp;</td>')
+    if not bar_segments_html and applicable_count > 0: # e.g. 0 met, 0 missed but applicable was >0 (should not happen with current logic)
+         bar_segments_html.append(f'<td width="100%" bgcolor="#e0e0e0" style="font-size:1px; line-height:1px; height:{bar_height_px}px; text-align:center; color:#555; font-size:10px; vertical-align:middle;">(Data Unavailable)</td>')
 
 
-    html = f"""
+    return f"""
     <div style="margin-bottom: 25px; padding:10px; border: 1px solid #eee; border-radius: 5px; background-color: #fdfdfd;">
         <h4 style="margin-top:0; margin-bottom: 10px; font-size: 16px; font-weight: 600; color: #444; text-align:center;">{chart_title}</h4>
-        <p style="font-size:12px; text-align:center; margin-top:0; margin-bottom:8px;">
-            Met: {met_count} ({met_percent:.1f}%) | Missed: {missed_count} ({missed_percent:.1f}%)
+        <p style="font-size:12px; text-align:center; margin-top:0; margin-bottom:8px; color: #333;">
+            <span style="color:{met_color};">●</span> Met: {met_count} ({met_percent:.1f}%)&nbsp;&nbsp;
+            <span style="color:{missed_color};">●</span> Missed: {missed_count} ({missed_percent:.1f}%)
         </p>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:none; height: 25px; border-radius: 4px; overflow: hidden;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #ccc; height: {bar_height_px}px; border-radius: 4px; overflow: hidden; table-layout: fixed;">
             <tr>
-    """
-    if met_count > 0:
-        html += f'<td width="{met_bar_width:.2f}%" bgcolor="{met_color}" style="font-size:1px; line-height:1px;">&nbsp;</td>'
-    if missed_count > 0:
-        html += f'<td width="{missed_bar_width:.2f}%" bgcolor="{missed_color}" style="font-size:1px; line-height:1px;">&nbsp;</td>'
-    if met_count == 0 and missed_count == 0 and applicable_count > 0 : # All were N/A but some were applicable
-        html += f'<td width="100%" bgcolor="#e0e0e0" style="font-size:1px; line-height:1px; text-align:center; color:#555; font-size:10px; vertical-align:middle;">(Data Unavailable)</td>'
-
-    html += """
+                {''.join(bar_segments_html) if bar_segments_html else '<td bgcolor="#f0f0f0" style="height:25px; text-align:center; font-size:11px; color:#777;">No applicable SLA data</td>'}
             </tr>
         </table>
     </div>
     """
-    return html
 
-# --- Data Loading Functions (find_client_data_file, load_client_data) --- Keep as is
-def find_client_data_file(raw_data_path):
+# --- Data Loading Functions --- (Keep as is)
+def find_client_data_file(raw_data_path): # ...
     log_message(f"Searching for client data files in: {raw_data_path}")
     search_pattern = os.path.join(raw_data_path, "freshservice_*.json")
     files = glob.glob(search_pattern)
@@ -146,7 +145,7 @@ def find_client_data_file(raw_data_path):
     log_message(f"Using newest file: {files[0]}")
     return files[0]
 
-def load_client_data(file_path):
+def load_client_data(file_path): # ...
     log_message(f"Loading client data from: {file_path}")
     try:
         with open(file_path, 'r', encoding='utf-8') as f: data = json.load(f)
@@ -154,7 +153,7 @@ def load_client_data(file_path):
         return data
     except Exception as e: log_message(f"Error loading {file_path}: {e}", "ERROR"); return None
 
-# --- Stats Calculation (Modified to store HTML chart strings) ---
+# --- Stats Calculation ---
 def calculate_ticket_stats(tickets_data):
     log_message(f"Calculating stats for {len(tickets_data)} tickets.")
     if not tickets_data: return {}
@@ -193,35 +192,35 @@ def calculate_ticket_stats(tickets_data):
                 stats["first_reply_sla_applicable"] += 1
                 if fr_secs <= sla["reply"]: ticket['first_reply_sla_status'] = "Met"; stats["first_reply_sla_met"] += 1
                 else: ticket['first_reply_sla_status'] = "Missed"
-            else: ticket['first_reply_sla_status'] = "N/A"
-        elif fr_str is None and sla["reply"] is not None: ticket['first_reply_sla_status'] = "No Reply"
+            else: ticket['first_reply_sla_status'] = "N/A (No SLA Def)"
+        elif sla["reply"] is not None and created_dt: # SLA applicable but no response found
+             ticket['first_reply_sla_status'] = "No Reply Logged"
+
         for r in ticket.get('all_satisfaction_ratings', []):
             if r and r.get('ratings') is not None: stats["satisfaction_ratings"].append(r['ratings'])
     stats["open_tickets"] = stats["total_tickets"] - stats["closed_tickets"]
     stats["average_resolution_time_str"] = format_duration(stats["total_resolution_seconds"] / stats["resolved_ticket_count"]) if stats["resolved_ticket_count"] > 0 else "N/A"
     stats["average_first_response_time_str"] = format_duration(stats["total_first_response_seconds"] / stats["first_response_count"]) if stats["first_response_count"] > 0 else "N/A"
-    stats["resolution_sla_percent_str"] = f'{(stats["resolution_sla_met"] / stats["resolution_sla_applicable"] * 100):.1f}% Met' if stats["resolution_sla_applicable"] > 0 else "N/A"
-    stats["first_reply_sla_percent_str"] = f'{(stats["first_reply_sla_met"] / stats["first_reply_sla_applicable"] * 100):.1f}% Met' if stats["first_reply_sla_applicable"] > 0 else "N/A"
+    stats["resolution_sla_percent_str"] = f'{(stats["resolution_sla_met"] / stats["resolution_sla_applicable"] * 100):.1f}% Met ({stats["resolution_sla_met"]}/{stats["resolution_sla_applicable"]})' if stats["resolution_sla_applicable"] > 0 else "N/A"
+    stats["first_reply_sla_percent_str"] = f'{(stats["first_reply_sla_met"] / stats["first_reply_sla_applicable"] * 100):.1f}% Met ({stats["first_reply_sla_met"]}/{stats["first_reply_sla_applicable"]})' if stats["first_reply_sla_applicable"] > 0 else "N/A"
     stats["satisfaction_summary"] = f'{(sum(1 for r in stats["satisfaction_ratings"] if r >= 4) / len(stats["satisfaction_ratings"]) * 100):.1f}% Positive' if stats["satisfaction_ratings"] else "N/A"
 
     # Generate HTML for charts
-    stats['type_chart_html'] = generate_html_bar_chart(stats['tickets_by_type'], 'Tickets by Type')
-    stats['priority_chart_html'] = generate_html_bar_chart(stats['tickets_by_priority'], 'Tickets by Priority')
-    stats['category_chart_html'] = generate_html_bar_chart(stats['tickets_by_category'], 'Tickets by Category')
-    stats['fr_sla_chart_html'] = generate_sla_bar_chart_html(stats['first_reply_sla_met'], stats['first_reply_sla_applicable'], 'First Reply SLA')
-    stats['res_sla_chart_html'] = generate_sla_bar_chart_html(stats['resolution_sla_met'], stats['resolution_sla_applicable'], 'Resolution SLA')
+    stats['type_chart_html'] = generate_segmented_bar_chart_html(stats['tickets_by_type'], 'Tickets by Type')
+    stats['priority_chart_html'] = generate_segmented_bar_chart_html(stats['tickets_by_priority'], 'Tickets by Priority')
+    stats['category_chart_html'] = generate_segmented_bar_chart_html(stats['tickets_by_category'], 'Tickets by Category')
+    stats['fr_sla_chart_html'] = generate_sla_bar_chart_html(stats['first_reply_sla_met'], stats['first_reply_sla_applicable'], 'First Reply SLA Met/Missed')
+    stats['res_sla_chart_html'] = generate_sla_bar_chart_html(stats['resolution_sla_met'], stats['resolution_sla_applicable'], 'Resolution SLA Met/Missed')
 
     log_message(f"Stats calculated and HTML charts generated.")
     return stats
 
-# --- HTML Rendering ---
+# --- HTML Rendering --- (No changes needed to this function itself)
 def render_html_report(client_info, tickets_data, calculated_stats):
     log_message("Rendering HTML report with HTML charts...")
     env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
-    env.filters['format_duration'] = format_duration
-    env.filters['format_datetime'] = format_datetime_filter
-    env.filters['format_date'] = format_date_filter
-    env.filters['get_satisfaction_text'] = get_satisfaction_text
+    env.filters['format_duration'] = format_duration; env.filters['format_datetime'] = format_datetime_filter
+    env.filters['format_date'] = format_date_filter; env.filters['get_satisfaction_text'] = get_satisfaction_text
     template_name = 'email_report_template.html'
     try: template = env.get_template(template_name)
     except Exception as e: log_message(f"Error loading template: {e}", "ERROR"); return "Error loading template."
@@ -231,8 +230,8 @@ def render_html_report(client_info, tickets_data, calculated_stats):
     log_message("HTML report rendered successfully.")
     return html_output
 
-# --- Main Logic --- (Keep as is)
-def main():
+# --- Main Logic --- (No changes needed here)
+def main(): # ... (as before)
     log_message("Starting report generation process...")
     client_data_file = find_client_data_file(RAW_DATA_DIR)
     if not client_data_file: return
@@ -250,13 +249,14 @@ def main():
         except Exception as e: log_message(f"Error saving HTML: {e}", "ERROR")
     log_message("Report generation process finished.")
 
+
 if __name__ == "__main__":
     if not os.path.exists(TEMPLATES_DIR):
         os.makedirs(TEMPLATES_DIR); log_message(f"Created: {TEMPLATES_DIR}")
     default_template_path = os.path.join(TEMPLATES_DIR, "email_report_template.html")
     log_message(f"Ensuring default template at '{default_template_path}'.")
 
-    # --- TEMPLATE V7 (with HTML bar charts) ---
+    # --- TEMPLATE V8 (for HTML segmented bar charts) ---
     basic_template_content = """
 <!DOCTYPE html>
 <html lang="en">
@@ -266,20 +266,19 @@ if __name__ == "__main__":
     <style>
         body { margin: 0; padding: 0; background-color: #f4f7f6; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; line-height: 1.6; }
         table { border-collapse: collapse; width: 100%; mso-table-lspace:0pt; mso-table-rspace:0pt;}
-        img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; max-width: 100%;}
         a { color: #007bff; text-decoration: none; }
         .container { background-color: #ffffff; width: 100%; max-width: 800px; margin: 20px auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); overflow: hidden; border: 1px solid #e0e0e0; }
         .header { background-color: #004a99; color: #ffffff; padding: 30px 40px; text-align: left; }
         .header h1 { margin: 0 0 5px 0; font-size: 28px; font-weight: 300; color: #ffffff;}
         .header p { margin: 0; font-size: 16px; font-weight: 300; color: #ffffff;}
-        .section { padding: 30px 40px; border-bottom: 1px solid #e0e0e0; }
+        .section { padding: 20px 30px; border-bottom: 1px solid #e0e0e0; } /* Reduced padding slightly */
         .section:last-of-type { border-bottom: none; }
-        .section h2 { font-size: 22px; color: #004a99; margin-top: 0; margin-bottom: 25px; font-weight: 600; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
-        .kpi-table td { width: 50%; padding: 5px 15px 5px 0; vertical-align: top; }
-        .kpi-card { background-color: #f9f9f9; padding: 20px; border-radius: 6px; border: 1px solid #eee; text-align: center; height: 100%; box-sizing: border-box;}
-        .kpi-value { font-size: 32px; font-weight: 700; color: #007bff; margin-bottom: 5px; }
-        .kpi-label { font-size: 14px; color: #555; }
-        .chart-table td { width: 50%; padding: 10px; vertical-align: top; } /* Removed text-align: center for charts */
+        .section h2 { font-size: 20px; color: #004a99; margin-top: 0; margin-bottom: 20px; font-weight: 600; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+        .kpi-table td { width: 50%; padding: 5px 10px 5px 0; vertical-align: top; }
+        .kpi-card { background-color: #f9f9f9; padding: 15px; border-radius: 6px; border: 1px solid #eee; text-align: center; height: 100%; box-sizing: border-box;}
+        .kpi-value { font-size: 28px; font-weight: 700; color: #007bff; margin-bottom: 5px; }
+        .kpi-label { font-size: 13px; color: #555; }
+        .chart-layout-table td { width: 50%; padding: 5px 15px; vertical-align: top; } /* For side-by-side charts */
         .ticket-table { width: 100%; margin-top: 20px; border: 1px solid #ddd; font-size: 12px; }
         .ticket-table th, .ticket-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         .ticket-table th { background-color: #f2f2f2; color: #333; font-weight: 600; }
@@ -293,11 +292,11 @@ if __name__ == "__main__":
 <body>
 <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"><tr><td style="background-color: #f4f7f6;">
 <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="800" class="container" align="center">
-    <tr><td class="header"> <h1>Monthly Service Report</h1>
-        <p>For: <strong>{{ client_info.name }}</strong></p>
-        <p>Period: {{ client_info.report_period_start }} - {{ client_info.report_period_end }}</p>
+    <tr><td class="header">
+        <h1>Monthly Service Report</h1><p>For: <strong>{{ client_info.name }}</strong></p><p>Period: {{ client_info.report_period_start }} - {{ client_info.report_period_end }}</p>
     </td></tr>
-    <tr><td class="section"> <h2>Key Performance Indicators</h2>
+    <tr><td class="section">
+        <h2>Key Performance Indicators</h2>
         <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="kpi-table">
             <tr>
                 <td><div class="kpi-card"><div class="kpi-value">{{ stats.total_tickets }}</div><div class="kpi-label">Total Tickets</div></div></td>
@@ -308,17 +307,18 @@ if __name__ == "__main__":
             </tr>
         </table>
     </td></tr>
-    <tr><td class="section"> <h2>SLA Performance <span style="font-size: 12px; color: #777;">(Calendar Time)</span></h2>
-        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="chart-table">
+    <tr><td class="section">
+        <h2>SLA Performance <span style="font-size: 12px; color: #777;">(Calendar Time Based)</span></h2>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="chart-layout-table">
             <tr>
                 <td>{{ stats.fr_sla_chart_html | safe }}</td>
                 <td>{{ stats.res_sla_chart_html | safe }}</td>
             </tr>
         </table>
-         <p style="font-size:12px; color: #777; text-align:center; margin-top:15px;">First Reply SLA: {{ stats.first_reply_sla_percent_str }}. Resolution SLA: {{ stats.resolution_sla_percent_str }}.</p>
     </td></tr>
-    <tr><td class="section"> <h2>Ticket Breakdown</h2>
-        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="chart-table">
+    <tr><td class="section">
+        <h2>Ticket Breakdown</h2>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="chart-layout-table">
             <tr>
                 <td>{{ stats.type_chart_html | safe }}</td>
                 <td>{{ stats.priority_chart_html | safe }}</td>
@@ -344,7 +344,7 @@ if __name__ == "__main__":
 </td></tr></table>
 </body></html>
 """
-    # --- END TEMPLATE V7 ---
+    # --- END TEMPLATE V8 ---
 
     write_template = True
     if os.path.exists(default_template_path):
