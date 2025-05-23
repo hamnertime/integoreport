@@ -1,146 +1,124 @@
 # IntegoReport
 
-**IntegoReport** is a Python-based project designed to pull data from various service APIs (initially Freshservice) to generate insightful reports for demonstrating value to clients. The primary output will be HTML reports, with a longer-term goal of integrating with services like Mailchimp for email delivery.
+**IntegoReport** is a Python-based project designed to pull data from various service APIs (initially Freshservice) and potentially link with CRM data (like Mailchimp) to generate insightful reports for demonstrating value to clients. The primary output is HTML reports, managed via a simple Flask web interface.
 
-**Current Status: Early Development**
+**Current Status: In Development**
 
-This project is in the very early stages of development. The immediate focus is on establishing the data pipeline from Freshservice and generating a basic HTML report.
+This project is actively being developed. Core features around Freshservice data pulling, Mailchimp contact linking, and HTML report generation via Flask are functional.
 
 ## Project Goal
 
 To create a system that can:
-1.  Fetch relevant client service data (e.g., helpdesk tickets, MS365 usage, Sentinel One alerts - future) from multiple APIs.
-2.  Process this data to derive key performance indicators and value metrics (e.g., tickets solved, types of issues, resolution times, proactive measures).
-3.  Generate comprehensive and easy-to-understand HTML reports for clients.
-4.  (Future) Automate the delivery of these reports, potentially via email services like Mailchimp.
-5.  Provide a simple Flask-based web interface for internal management, client selection, and report generation.
+1.  Fetch relevant client service data (e.g., helpdesk tickets from Freshservice).
+2.  Attempt to link Freshservice clients to contacts in Mailchimp to find primary email addresses.
+3.  Process this data to derive key performance indicators and value metrics (e.g., tickets solved, types of issues, resolution times, SLA adherence).
+4.  Generate comprehensive and easy-to-understand HTML reports for clients.
+5.  Provide a simple Flask-based web interface for internal management:
+    * Updating the client list from Freshservice and linking with Mailchimp.
+    * Selecting a client to generate a report.
+    * Viewing the generated report.
+    * Sending the report via Mailchimp to the linked client contact (and an internal copy).
+6.  (Future) Integrate with other services (e.g., MS365 usage, Sentinel One alerts) and automate report delivery.
 
-## Current Features (In Progress)
+## Core Files and Their Purpose
 
-* **Freshservice Data Puller (`data_pullers/freshservice.py`):**
-    * Accepts a client ID (currently a Freshservice Department ID) and an optional entity type hint (`department` or `company`).
-    * Automatically determines the date range for the **previous full calendar month**.
-    * Fetches client (Department/Company) details from Freshservice, including standard and some custom fields (e.g., Prime User Name, Client Type).
-    * Fetches all tickets for the specified client within the calculated date range using the `(department_id:{client_id}) AND (created_at:...)` filter.
-    * For each ticket, fetches detailed information including:
-        * Standard ticket attributes.
-        * Embedded stats, requester, assets, department, requested_for, and tags.
-        * All conversations (paginated).
-        * All time entries (paginated).
-        * Satisfaction ratings (handles 404s gracefully if none exist).
-    * Adds textual representations for status (`status_text`) and priority (`priority_text`) to each ticket object.
-    * Saves the comprehensive data for the client into a JSON file in the `raw_data/` directory (e.g., `raw_data/freshservice_{CLIENT_ID}.json`).
-* **Client List Manager (`utils/client_manager.py`):**
-    * Fetches a list of all "clients" from Freshservice.
-    * Intelligently tries the `/api/v2/companies` endpoint first, then falls back to `/api/v2/departments` if companies are not found (as is common in some MSP setups).
-    * Extracts client ID and Name.
-    * Saves this list to `companies_list.json` in the project root.
+* **`main.py`**: The main Flask web application. It provides the user interface to:
+    * Trigger updates of the client list (which runs `utils/client_updater.py`).
+    * Select a client and initiate report generation (runs `data_pullers/freshservice.py` then `build_report.py`).
+    * Display a dispatch page with options to view the generated report or send it via Mailchimp.
+* **`utils/client_updater.py`**: Script to fetch all clients (companies/departments) from Freshservice.
+    * Fetches detailed information for each Freshservice client, including primary contact names.
+    * Fetches all contacts from a specified Mailchimp audience.
+    * Attempts to link Freshservice clients to Mailchimp contacts by matching contact names or, as a fallback, by matching company email domains.
+    * Outputs the consolidated list (with linked emails and link status) to `companies_list.json`.
+    * Logs Freshservice contacts that have a prime user/head name but couldn't be found in Mailchimp.
+* **`data_pullers/freshservice.py`**: Fetches detailed data for a *specific* client from Freshservice for a defined period (previous full month).
+    * This includes tickets, conversations, time entries, satisfaction ratings, and detailed client attributes.
+    * Saves this data to a JSON file in the `raw_data/` directory (e.g., `freshservice_{CLIENT_ID}.json`).
+* **`build_report.py`**: Generates the final HTML report.
+    * Loads data from the most recent JSON file in `raw_data/`.
+    * Calculates various statistics (total tickets, resolution times, SLA adherence based on specific definitions, tickets by type/priority/category).
+    * Generates HTML table-based bar charts for email-friendly visualization of data distributions.
+    * Renders the `output_report.html` file using a Jinja2 template.
+* **`token.txt`**: Stores the Freshservice API key (must be in `.gitignore`).
+* **`mail_token.txt`**: Stores the Mailchimp API key (must be in `.gitignore`).
+* **`companies_list.json`**: Stores the list of clients from Freshservice, including their ID, name, linked Mailchimp email, Mailchimp link status, and the Freshservice contact name that was targeted for linking.
+* **`raw_data/` (directory)**: Stores the detailed JSON output from `data_pullers/freshservice.py` for each report run.
+* **`templates/` (directory)**:
+    * `email_report_template.html`: The Jinja2 template used by `build_report.py` to generate the client-facing HTML report.
+    * Other templates used by `main.py` (Flask app): `index.html`, `generating.html`, `dispatch_report.html`.
+* **`output_report.html`**: The final HTML report generated by `build_report.py`.
+
+## Current Features
+
+* **Flask Web Interface (`main.py`):**
+    * Displays a list of Freshservice clients from `companies_list.json`.
+    * Shows Mailchimp linking status (linked email, contact to add, no FS contact).
+    * Button to trigger `utils/client_updater.py` to refresh client list and Mailchimp links.
+    * "Generate Report" button enabled only for clients with a linked email.
+    * Report generation status page.
+    * Dispatch page after report generation with options to:
+        * Send the HTML report via Mailchimp (as a campaign to the client and a copy internally).
+        * View the report directly in the browser.
+* **Freshservice Data Pulling & Client Linking (`utils/client_updater.py` & `data_pullers/freshservice.py`):**
+    * `client_updater.py` fetches all Freshservice clients (companies or departments) and their details (including prime user/head name).
+    * It then fetches all contacts from a specified Mailchimp audience.
+    * Attempts to match Freshservice client contacts to Mailchimp contacts by name, with a fallback to matching by company email domain.
+    * Stores the updated client list with linking information in `companies_list.json`.
+    * `freshservice.py` pulls comprehensive ticket data and related details for a specific client for the previous full month.
 * **HTML Report Builder (`build_report.py`):**
-    * Automatically detects the most recent `freshservice_*.json` file in the `raw_data/` directory.
-    * Loads the client and ticket data from this JSON file.
-    * Calculates basic summary statistics (total tickets, closed/resolved, open, counts by type and priority, average resolution time).
-    * Renders an HTML report using a Jinja2 template (`templates/email_report_template.html`).
-    * The default template includes client details, summary stats, and a sample list of recent tickets with formatted dates and durations.
-    * Saves the generated report as `output_report.html` in the project root.
-* **Templating:** Uses Jinja2 for HTML generation, with custom filters for date and duration formatting.
+    * Loads data for the selected client.
+    * Calculates statistics: total tickets, resolved/open, average resolution/first response times (calendar-based), SLA adherence (calendar-based against defined targets for reply and resolution), tickets by type, priority, and category.
+    * Generates email-friendly HTML table-based bar charts for visualizing distributions.
+    * Outputs a styled HTML report (`output_report.html`).
 
-## Planned Project Structure
-```
-integoreport/
-├── main.py                           # Flask app (To be developed)
-├── pull_info.py                      # Orchestrates data pullers (Basic placeholder)
-├── build_report.py                   # Generates HTML report from raw_data
-│
-├── data_pullers/
-│   └── freshservice.py               # Fetches data for a client from Freshservice
-│
-├── utils/
-│   └── client_manager.py             # Fetches and manages the list of clients
-│
-├── raw_data/                         # Stores JSON output from data_pullers
-│   │                                 # (e.g., freshservice_CLIENTID.json)
-│   │                                 # This folder is intended to be temporary
-│   │                                 # for each report run.
-│
-├── templates/
-│   └── email_report_template.html    # Template for the client HTML email
-│
-├── static/                           # CSS, JS for the Flask app (if needed)
-│
-├── token.txt                         # Stores Freshservice API key
-│                                     # (MUST be in .gitignore)
-├── companies_list.json               # Stores the list of clients (ID and Name)
-└── README.md                         # This file
-```
-
-
-## Setup (Current)
+## Setup
 
 1.  **Clone the Repository.**
 2.  **Python Environment:**
     * Python 3.x recommended.
-    * Use a virtual environment:
-        ```bash
-        python -m venv venv
-        source venv/bin/activate  # On Windows: venv\Scripts\activate
-        ```
+    * Use a virtual environment.
 3.  **Install Dependencies:**
     ```bash
-    pip install requests python-dateutil Jinja2
+    pip install requests python-dateutil Jinja2 Flask 
+    # matplotlib is no longer needed if only using HTML charts
     ```
 4.  **Configuration:**
-    * Create `token.txt` in the project root (`integoreport/`) and place your Freshservice API key in it (just the key, no other text).
-    * Ensure your API key has permissions to:
-        * Read Departments (and/or Companies, depending on your setup).
-        * Filter and Read Tickets (including details, stats, requester info, assets, conversations, time entries).
-        * *(Currently, the script assumes read access to Requesters is NOT available due to prior 403 errors, so it doesn't fetch Prime User emails directly).*
+    * Create `token.txt` in the project root (`integoreport/`) with your Freshservice API key.
+    * Create `mail_token.txt` in the project root with your Mailchimp API key.
+    * In `utils/client_updater.py` and `main.py`, update `MAILCHIMP_LIST_ID` with your Mailchimp Audience ID.
+    * In `main.py`, configure `COPY_REPORT_TO_EMAIL` with the email address to receive copies of reports.
+    * Review `FROM_NAME` and `REPLY_TO` email settings in `main.py` within the `send_report_via_mailchimp` function.
 
-## Running the Components (Current Workflow)
+## Running the Application
 
-1.  **Update Client List (as needed):**
+1.  **Update Client List (as needed, can also be done from web UI):**
     ```bash
-    python utils/client_manager.py
+    python utils/client_updater.py
     ```
-    This will generate/update `companies_list.json` in the project root.
-
-2.  **Fetch Data for a Specific Client:**
-    * Identify the `CLIENT_ID` from `companies_list.json`.
-    * Run the Freshservice data puller:
-        ```bash
-        python data_pullers/freshservice.py <CLIENT_ID>
-        # Example: python data_pullers/freshservice.py 19000077030
-        ```
-    * This will create a `freshservice_<CLIENT_ID>.json` file in the `raw_data/` directory.
-
-3.  **Generate the HTML Report:**
+    This will generate/update `companies_list.json`.
+2.  **Run the Flask Web Application:**
     ```bash
-    python build_report.py
+    python main.py
     ```
-    * This script will automatically find the latest `freshservice_*.json` file in `raw_data/`.
-    * It will generate `output_report.html` in the project root.
+    Access the interface at `http://127.0.0.1:5000/`.
+    * Use the "Update Client List" button on the web page.
+    * For clients with linked emails, click "Generate Report".
+    * From the dispatch page, choose to send the email via Mailchimp or view it.
 
 ## Next Steps & Future Development
 
-* **Refine `build_report.py`:**
-    * Calculate more advanced and insightful statistics (e.g., First Contact Resolution, SLA adherence if data is available, trends over time).
-    * Improve the HTML template (`templates/email_report_template.html`) for better presentation and client-readiness.
-    * Implement CSS inlining for robust email client compatibility (e.g., using the `premailer` library).
-* **Develop `pull_info.py`:**
-    * Create logic to iterate through a list of clients (from `companies_list.json`) and run the appropriate data pullers for each.
-    * Manage the `raw_data/` directory (e.g., clear it before a new batch run or archive old data).
-* **Develop `main.py` (Flask Interface):**
-    * UI to trigger `client_manager.py`.
-    * UI to select a client and date range (or "previous month") to trigger `pull_info.py` and then `build_report.py`.
-    * Display generated reports or provide download links.
-* **Add More Data Pullers:**
-    * Microsoft 365 (e.g., Secure Score, user activity).
-    * Sentinel One (e.g., threat summaries).
-* **Mailchimp Integration:** Send the generated HTML reports via Mailchimp API.
-* **Error Handling & Logging:** Enhance across all scripts.
+* **Refine Mailchimp Matching:** Improve the robustness of matching Freshservice contacts to Mailchimp contacts (e.g., using fuzzy matching or more sophisticated heuristics if simple name/domain matching isn't sufficient).
+* **Error Handling & Logging:** Continue to enhance across all scripts for better diagnostics.
+* **Configuration Management:** Move settings (like API keys, list IDs, from/reply-to emails, copy-to email) into a dedicated configuration file or environment variables instead of hardcoding them in scripts.
+* **Business Hours for SLAs:** Investigate fetching or allowing configuration of business hours to calculate SLA adherence more accurately (currently uses calendar time).
+* **Mailchimp Transactional Email:** For sending individual reports, consider migrating from the Mailchimp Marketing API (campaigns) to Mailchimp Transactional Email (formerly Mandrill) for a more appropriate and potentially more robust email sending mechanism, though this requires a separate API key and setup.
+* **Add More Data Pullers:** Microsoft 365, Sentinel One, etc.
+* **Historical Reporting/Trends:** Allow report generation for custom date ranges and potentially show trends over time.
 
 ## License
 
-This project is licensed under the GPLv3 License. See the `LICENSE.md` file for details (you'll need to create this file and add the GPLv3 text to it).
+This project is licensed under the GPLv3 License.
 
 ---
 Copyright (c) 2025 David Hamner
